@@ -13,4 +13,10 @@ class BinUtils:
     @staticmethod
     def xorhexstrings(hexstring1,hexstring2):
         assert len(hexstring1) == len(hexstring2) and len(hexstring2) % 2 == 0
-        return f'{int(hexstring1,16)^int(hexstring2,16):0{len(hexstring2)}x}'
+        return f'{int(hexstring1,16)^int(hexstring2,16):0{len(hexstring2)}X}'
+
+    @staticmethod
+    def makerepeatedkey(key,textlength):
+        newkey = textlength//len(key) * key
+        newkey += key[:textlength%len(key)]
+        return newkey

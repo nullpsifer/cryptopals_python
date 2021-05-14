@@ -20,4 +20,9 @@ class TestBinUtils(unittest.TestCase):
         hexstring1 = '1c0111001f010100061a024b53535009181c'
         hexstring2 = '686974207468652062756c6c277320657965'
         hexstring3 = '746865206b696420646f6e277420706c6179'
-        assert binutils.BinUtils.xorhexstrings(hexstring1,hexstring2) == hexstring3
+        assert binutils.BinUtils.xorhexstrings(hexstring1,hexstring2) == hexstring3.upper()
+
+    def test_makerepeatedkey(self):
+        key = '1c2e'
+        repeatedkey = '1c2e1c2e1c'
+        assert binutils.BinUtils().makerepeatedkey(key,10) == repeatedkey
