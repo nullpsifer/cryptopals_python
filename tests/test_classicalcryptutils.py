@@ -1,5 +1,5 @@
 from utils.binutils import *
-from utils.cryptutils import *
+from utils.classicalcryptutils import *
 import os
 
 
