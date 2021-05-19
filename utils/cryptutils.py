@@ -1,6 +1,8 @@
 import base64
+from dataclasses import dataclass
 import binascii
-import utils.binutils
+from gmpy2 import mpq
+from utils.binutils import BinUtils
 import string
 
 
@@ -19,18 +21,19 @@ class XORCrypt():
         if not (set(localtext.upper()) < self.hexdigits):
             localtext = base64.b16encode(localtext.encode('utf-8')).decode('utf-8')
         try:
-            return utils.binutils.BinUtils.xorhexstrings(utils.binutils.BinUtils.makerepeatedkey(self.key, len(localtext)),
+            return BinUtils.xorhexstrings(BinUtils.makerepeatedkey(self.key, len(localtext)),
                                                          localtext)
         except binascii.Error as e:
             if str(e) == 'Non-base16 digit found':
                 hextext = base64.b16encode(text)
-                return utils.binutils.BinUtils.xorhexstrings(
-                    utils.binutils.BinUtils.makerepeatedkey(self.key, len(hextext)), hextext)
+                return BinUtils.xorhexstrings(
+                    BinUtils.makerepeatedkey(self.key, len(hextext)), hextext)
 
 
 class ClassicalCryptAnalysis(object):
     letterorder = 'etaoinshrdlcumwfgypbvkjxqz'
-    englishcharacters = string.ascii_lowercase + string.whitespace + '.,\'"-_'
+    englishcharacters = set(string.ascii_lowercase + string.whitespace + '?!.,\'"-_'+string.digits)
+    #englishcharacters = set(string.printable)
     with open('/usr/share/dict/american-english') as f:
         dictwords = {line.strip().upper() for line in f}
 
@@ -42,7 +45,7 @@ class ClassicalCryptAnalysis(object):
         self.words = []
 
     def isEnglish(self):
-        return set(self.text.lower()) < set(self.englishcharacters)
+        return set(self.text.lower()) < self.englishcharacters
 
     def wordcountcheck(self):
         self.words = self.text.split()
@@ -103,6 +106,88 @@ class SBXCryptAnalysis:
         solutionsToRemove.reverse()
         for i in solutionsToRemove:
             del self.possibleSolutions[i]
+
+@dataclass(frozen=True)
+class HammingDistanceData:
+    distance: int
+    length: int
+    numofblocks: int
+    def __gt__(self, other):
+        if other.__class__ is self.__class__:
+            return mpq(self.distance,self.length*self.numofblocks) > mpq(other.distance,other.length*other.numofblocks)
+
+class RepeatingKeyXorCA:
+
+    def __init__(self,ctext):
+        self.ctext = ctext
+        self.distances = []
+        self.keys = []
+        self.possibleSolutions = []
+
+    def createTransposedBlocks(self,keysize):
+        transposeBlocks = keysize*['']
+        transposeBlockIndex = 0
+        for i in range(0,len(self.ctext),2):
+            transposeBlocks[transposeBlockIndex] += self.ctext[i:i+2]
+            transposeBlockIndex += 1
+            transposeBlockIndex %= keysize
+        return transposeBlocks
+
+    @classmethod
+    def generatePossibleKeys(cls,sbxcas):
+        if len(sbxcas) == 1:
+            return [possibleSolution[1] for possibleSolution in sbxcas[0].possibleSolutions]
+        startofkeys = [possibleSolution[1] for possibleSolution in sbxcas[0].possibleSolutions]
+        keyparts = []
+        remainingParts = cls.generatePossibleKeys(sbxcas[1:])
+        for i in range(len(startofkeys)):
+            for j in range(len(remainingParts)):
+                keyparts.append(startofkeys[i]+remainingParts[j])
+        return keyparts
+
+    def tryKeySize(self,keysize):
+        transposedBlocks = self.createTransposedBlocks(keysize)
+        sbxcas = [SBXCryptAnalysis(block) for block in transposedBlocks]
+        for sbxca in sbxcas:
+            sbxca.runkeys()
+        return sbxcas
+
+    def findKeySize(self):
+        for i in range(2,41):
+            blocks = BinUtils.makeblocks(self.ctext,i)
+            distance = 0
+            for j in range(len(blocks)):
+                distance += BinUtils.hammingdistance(blocks[i],blocks[i+1])
+            self.distances.append(HammingDistanceData(distance,i,len(blocks)))
+        self.distances.sort()
+
+    def checkkeysizes(self):
+        for i in range(4):
+            sbxcas = self.tryKeySize(self.distances[i].length)
+            generateFullKey = True
+            for sbxca in sbxcas:
+                if len(sbxca.possibleSolutions) == 0:
+                    generateFullKey = False
+                    break
+            if generateFullKey:
+                self.keys += self.generatePossibleKeys(sbxcas)
+
+    def checkkeys(self):
+        for key in self.keys:
+            xorcrypt = XORCrypt(key)
+            ptext = base64.b16decode(xorcrypt.crypt(self.ctext)).decode('utf-8')
+            cca = ClassicalCryptAnalysis(ptext)
+            if cca.wordcountcheck():
+                wordsindict = cca.checkwords()
+                if len(cca.words)//2 < wordsindict <= len(cca.words):
+                    self.possibleSolutions.append((ptext,key))
+
+    def crack(self):
+        self.findKeySize()
+        self.checkkeysizes()
+        self.checkkeys()
+        return self.possibleSolutions
+
 
 def findSBXinFile(filename):
     possibleSolutions = []

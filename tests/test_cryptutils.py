@@ -1,3 +1,4 @@
+from utils.binutils import *
 from utils.cryptutils import *
 import os
 
@@ -47,3 +48,32 @@ I go crazy when I hear a cymbal'''
         ciphertext = '0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f'
         print(f'plaintext length= {len(plaintext)}\nciphertext length = {len(ciphertext)}')
         assert xorcrypt.crypt(plaintext) == ciphertext.upper()
+
+
+class TestRepeatedXorCA:
+    def test_create_transposed_blocks(self):
+        assert False
+
+    def test_generate_possible_keys(self):
+        assert False
+
+    def test_try_key_size(self):
+        assert False
+
+    def test_find_key_size(self):
+        assert False
+
+    def test_checkkeysizes(self):
+        assert False
+
+    def test_checkkeys(self):
+        assert False
+
+    def test_crack(self):
+        hexstring = FileHelper.readb64file('../challenge_files/challenge6.txt')
+        rxca = RepeatingKeyXorCA(hexstring)
+        possiblesolutions = rxca.crack()
+        with open('../challenge_files/challenge6_decrypted.txt') as f:
+            plaintext = f.read()
+
+        assert possiblesolutions[0][1] == '5465726D696E61746F7220583A204272696E6720746865206E6F697365' and  possiblesolutions[0][0] == plaintext
