@@ -70,7 +70,7 @@ class TestRepeatedXorCA:
         assert False
 
     def test_crack(self):
-        hexstring = FileHelper.readb64file('../challenge_files/challenge6.txt')
+        hexstring = FileHelper.readb64filetohex('../challenge_files/challenge6.txt')
         rxca = RepeatingKeyXorCA(hexstring)
         possiblesolutions = rxca.crack()
         with open('../challenge_files/challenge6_decrypted.txt') as f:

@@ -56,6 +56,10 @@ class BinUtils:
 class FileHelper():
 
     @staticmethod
-    def readb64file(filename):
+    def readb64filetohex(filename):
         with open(filename) as f:
             return BinUtils.base642hex(''.join(f.read().split()))
+    @staticmethod
+    def readb64filetobytes(filename):
+        with open(filename) as f:
+            return base64.b64decode(''.join(f.read().split()))
