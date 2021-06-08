@@ -13,6 +13,7 @@ class PKCS7:
 
     def unpad(self, bytestring: bytes):
         lastbyte = bytestring[-1]
+        print(type(lastbyte))
         if 0 < lastbyte <= self.blocksize and bytestring[-lastbyte:] == lastbyte.to_bytes(1,'big')*lastbyte:
             return bytestring[:-lastbyte]
         raise PKCS7Exception
