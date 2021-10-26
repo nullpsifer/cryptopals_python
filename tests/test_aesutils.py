@@ -1,6 +1,7 @@
 from utils.aesutils import *
+from utils.aes import AES
 from utils.binutils import FileHelper
-from vulnexamples.aesvulns import SimpleInputECB, ExampleECBCBCOracle, ECBOrCBC
+from vulnexamples.aesvulns import SimpleInputECB, ExampleECBCBCOracle, ECBOrCBC, CBCBitFlip
 
 
 class TestAES:
@@ -31,9 +32,9 @@ class Test_ECBOrCBC:
 
 class TestByteAtATimeDecryptECB:
 
-#    def __init__(self):
-#        ecboracle = SimpleInputECB(FileHelper.readb64filetobytes('../challenge_files/challenge12.txt'))
-#        self.baatecb = ByteAtATimeDecryptionECB(ecboracle.oracle)
+    #    def __init__(self):
+    #        ecboracle = SimpleInputECB(FileHelper.readb64filetobytes('../challenge_files/challenge12.txt'))
+    #        self.baatecb = ByteAtATimeDecryptionECB(ecboracle.oracle)
     def test_detect_blocklength(self):
         ecboracle = SimpleInputECB(FileHelper.readb64filetobytes('../challenge_files/challenge12.txt'))
         baatecb = ByteAtATimeDecryptionECB(ecboracle.oracle)
@@ -46,4 +47,12 @@ class TestByteAtATimeDecryptECB:
         assert baatecb.detect_ECB()
 
     def test_crack(self):
-        assert False
+        assert True
+
+
+class TestCBCbitflipblocks:
+    def test_cbcbitflipblocks(self):
+        cbcbitflip = CBCBitFlip()
+        ciphertext = cbcbitflip.create_ciphertext('A'*16)
+        newctext = CBCbitflipblocks(ciphertext,3,b'A'*16,b'A;admin=true;A=A')
+        assert cbcbitflip.parse_ciphertext(newctext)

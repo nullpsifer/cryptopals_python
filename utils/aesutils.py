@@ -1,54 +1,13 @@
 import base64
-from base64 import b16decode, b16encode
-from Crypto.Cipher import AES as pycryptoAES
-import os
 import string
-from tqdm import trange
+from tqdm import trange, tqdm
+from utils.aes import AES
 from utils.binutils import BinUtils
 from utils.pkcs7 import PKCS7
 
-class AES:
-     iv: str
-     blocksize = 16
-     padding = PKCS7(blocksize)
-     def __init__(self,key :bytes,mode :str,iv=None):
-          self.cipher = pycryptoAES.new(key,pycryptoAES.MODE_ECB)
-          self.mode = mode
-          if iv:
-               self.iv = iv
-
-     def encrypt(self,plaintext:bytes,iv=None):
-         if self.mode == 'ECB':
-              return b16encode(self.cipher.encrypt(self.padding.pad(plaintext))).decode('utf-8')
-         if self.mode == 'CBC':
-              ciphertext = ''
-              if not iv:
-                  self.iv = b16encode(os.urandom(self.blocksize)).decode('utf-8')
-              paddedplaintext = b16encode(self.padding.pad(plaintext)).decode('utf-8')
-              blocks = BinUtils.makeblocks(paddedplaintext,self.blocksize)
-              ciphertext = self.iv
-              for i in range(len(blocks)):
-                  self.iv = b16encode(self.cipher.encrypt(b16decode(BinUtils.xorhexstrings(blocks[i],self.iv)))).decode('utf-8')
-                  ciphertext += self.iv
-              return ciphertext
-
-     def decrypt(self, ciphertext :str):
-         if self.mode == 'ECB':
-             plaintext = self.cipher.decrypt(b16decode(ciphertext))
-             return self.padding.unpad(plaintext)
-         if self.mode == 'CBC':
-             blocks = BinUtils.makeblocks(ciphertext,self.blocksize)
-             plaintext = b''
-             for i in range(len(blocks)-1,0,-1):
-                 temp = b16decode(BinUtils.xorhexstrings(blocks[i-1],b16encode(self.cipher.decrypt(b16decode(blocks[i]))).decode('utf-8')))
-                 if i == len(blocks)-1:
-                     temp = self.padding.unpad(temp)
-                 plaintext = temp + plaintext
-             return plaintext
-
 
 def isECB(ciphertext: str):
-     blocks = BinUtils.makeblocks(ciphertext,AES.blocksize)
+     blocks = BinUtils.makeblocks(ciphertext, AES.blocksize)
      return len(set(blocks)) < len(blocks)
 
 
@@ -121,10 +80,90 @@ class ByteAtATimeDecryptionECB:
         return self.crack()
 
 
-def ECBemailcutandpaste(prefixlength :int, suffixlength :int, email :bytes,newtext :bytes, oracle :function, pad :function,blocksize=16):
-    username, suffix = email.split(b'@')[0]
+def ECBemailcutandpaste(prefixlength :int, suffixlength :int, email :bytes,newtext :bytes, oracle :callable, pad :callable,blocksize=16):
+    username, suffix = email.split(b'@')
     prepad = (blocksize - ((prefixlength + len(username)+1)%blocksize))*b'A'
     newusername = username + b'+' + prepad
     block = (prefixlength + len(newusername))//blocksize
-    newemail = newusername + pad(newusername) + suffixlength*b'A' + suffix
-    print(newemail)
+    newemail = newusername + pad(newtext) + (blocksize-((suffixlength+1+len(suffix))%blocksize))*b'A' + b'@'+suffix
+    return newemail.decode('utf-8')
+
+def CBCbitflipblocks(ciphertext :str, blocktoflip :int, originalbytes :bytes, newbytes :bytes, blocksize=16) -> bytes:
+    blocks = BinUtils.makeblocks(ciphertext.encode('utf-8'),blocksize)
+    blocks[blocktoflip-1] = base64.b16encode((int(blocks[blocktoflip-1],16)^int.from_bytes(originalbytes,'big')^int.from_bytes(newbytes,'big')).to_bytes(blocksize,'big'))
+    return b''.join(blocks)
+
+class PaddingOracleAttack:
+
+    def __init__(self,ciphertext :str,oracle :callable,blocksize=16):
+        self.blocksize = blocksize
+        self.ctextblocks = BinUtils.makeblocks(ciphertext.encode('utf-8'), self.blocksize)
+        self.oracle = oracle
+        self.paddingsize = 1
+        self.numberofctextblocks = len(self.ctextblocks)-1
+        self.tqdm = tqdm(total=16*self.numberofctextblocks)
+        self.currentblock = self.numberofctextblocks
+        self.plaintext = bytearray(b'')
+        self.pad = 1
+        self.currentblockint = int(self.ctextblocks[self.currentblock-1],16)
+        self.keepgoing = True
+        self.beginning = True
+
+    def makepad(self):
+        self.pad = 0
+        for i in range(self.paddingsize):
+            self.pad |= self.paddingsize << (8*i)
+
+    def increment_pad(self):
+        self.paddingsize +=1
+        if self.paddingsize > self.blocksize:
+            self.paddingsize = 1
+            self.currentblock -=1
+            self.plaintext = self.guess + self.plaintext
+            self.initialize_guess()
+            self.currentblockint = int(self.ctextblocks[self.currentblock - 1], 16)
+            if self.currentblock == 0:
+                self.keepgoing = False
+        self.makepad()
+
+    def initialize_guess(self):
+        self.guess = bytearray((b'\x00'*(self.blocksize-1))+(b'\x10' if self.beginning else b'\x20'))
+
+    def print_currentguess(self):
+        currentplaintext = b'0'*(2*self.blocksize*(self.currentblock-1))+base64.b16encode(self.guess) + base64.b16encode(self.plaintext)
+        self.tqdm.set_description(f'Current guess: {currentplaintext.decode("utf-8")}')
+
+    def update_guess(self):
+        if self.beginning:
+            self.guess[-self.paddingsize] = (self.guess[-self.paddingsize]-1)%256
+        else:
+            self.guess[-self.paddingsize] = (self.guess[-self.paddingsize]+1)%256
+
+    def replaceblock(self):
+        self.replacementblock = f'{int.from_bytes(self.guess,"big")^self.pad^self.currentblockint:0{2*self.blocksize}X}'.encode('utf-8')
+
+    def makeciphertext(self):
+        return b''.join(self.ctextblocks[:self.currentblock-1]+[self.replacementblock,self.ctextblocks[self.currentblock]])
+
+    def step(self):
+        self.replaceblock()
+        ciphertext = self.makeciphertext()
+        self.print_currentguess()
+        if self.oracle(ciphertext):
+            if self.beginning:
+                self.paddingsize = self.guess[-1]
+                self.guess =bytearray(b'\x00'*(self.blocksize-self.paddingsize)+self.guess[-1].to_bytes(1,'big')*self.paddingsize)
+                self.beginning = False
+                self.tqdm.update(n=self.paddingsize)
+            else:
+                self.tqdm.update(n=1)
+            self.increment_pad()
+        self.update_guess()
+
+    def runattack(self):
+        self.initialize_guess()
+        while self.keepgoing:
+            #self.print_currentguess()
+            self.step()
+        pad = PKCS7()
+        return pad.unpad(self.plaintext).decode('utf-8')
